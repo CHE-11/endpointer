@@ -1,0 +1,108 @@
+{
+  "name": "endpointer",
+  "displayName": "Endpointer",
+  "description": "",
+  "version": "1.0.1",
+  "license": "MIT",
+  "icon": "/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/CHE-11/endpointer.git"
+  },
+  "engines": {
+    "vscode": "^1.88.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "endpointer",
+      "properties": {
+        "endpointer.endpointTemplateFormat": {
+          "type": "string",
+          "default": "",
+          "description": "Set the format for the endpoint template"
+        },
+        "endpointer.endpointRegex": {
+          "type": "string",
+          "default": "\/\/ ENDPOINTER <> \"(method)\": \"(GET|POST|PUT|DELETE)\", \"endpoint\": \"(.+)\"",
+          "description": "Set the format for the endpoint template"
+        },
+        "endpointer.frontendCallRegex": {
+          "type": "string",
+          "default": "https?://[^\\s]+",
+          "description": "The color of the URI link"
+        },
+        "endpointer.linkColor" :{
+          "type": "string",
+          "default": "#0000FF",
+          "description": "The color of the URI link"
+        },
+        "endpointer.showLinkIcon" : {
+          "type": "boolean",
+          "default": true,
+          "description": "Show link icon"
+        }
+      
+      }
+    },
+
+    "commands": [
+      {
+        "command": "extension.reindexWorkspace",
+        "title": "Reindex Workspace"
+      },
+      {
+        "command": "extension.pasteEndpointTemplate",
+        "title": "Paste Endpoint Template"
+      },
+      {
+        "command": "extension.openEndpoint",
+        "title": "Open Endpoint"
+      }
+    ],
+
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorTextFocus",
+          "command": "extension.pasteEndpointTemplate",
+          "group": "endpointer@1"
+        }
+      ]
+    },
+
+    "views": {
+      "explorer": [
+        {
+          "id": "endpointer",
+          "name": "Endpointer"
+        }
+      ]
+    }
+
+  },
+  "scripts": {
+    "vscode:prepublish": "yarn run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "yarn run compile && yarn run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.88.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^7.4.0",
+    "@typescript-eslint/parser": "^7.4.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.3",
+    "@vscode/test-cli": "^0.0.8",
+    "@vscode/test-electron": "^2.3.9"
+  }
+}
