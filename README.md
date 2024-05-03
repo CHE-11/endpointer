@@ -3,6 +3,7 @@ Endpointer is a fast way to jump from an endpoint call in the frontend to the ro
 
 If you work in a monorepo like I tend to do, you know how annoying it can be to have to jump between the frontend and backend to find the route that is being called. You end up going to an index file that lists all the routes, then you have to find the route that is being called. It's a pain. 
 
+https://github.com/CHE-11/endpointer/assets/57516026/ad8bec06-10b8-418c-9d39-135d24d3143b
 
 ## Usage
 There are two options in the command palette:
