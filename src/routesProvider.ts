@@ -1,95 +1,100 @@
 import * as vscode from 'vscode';
-import * as fs from 'fs';
 import * as path from 'path';
 
-export class RoutesProvider implements vscode.TreeDataProvider<Dependency> {
-  constructor(private workspaceRoot: string) {}
+interface BackendMatch {
+  method: string;
+  endpoint: string;
+  file: string;
+  uri: string;
+}
 
-  getTreeItem(element: Dependency): vscode.TreeItem {
+
+export class RoutesProvider implements vscode.TreeDataProvider<Route> {
+  private _onDidChangeTreeData: vscode.EventEmitter<Route | undefined | void> = new vscode.EventEmitter<Route | undefined | void>();
+  readonly onDidChangeTreeData: vscode.Event<Route | undefined | void> = this._onDidChangeTreeData.event;
+  private routesMap = new Map<string, Route>();
+
+  constructor(private workspaceRoot: string, private context: vscode.ExtensionContext) {}
+
+  refresh(): void {
+    this.routesMap.clear(); // Clear previous data
+    this._onDidChangeTreeData.fire();
+  }
+
+  getTreeItem(element: Route): vscode.TreeItem {
     return element;
   }
 
-  getChildren(element?: Dependency): Thenable<Dependency[]> {
+  getChildren(element?: Route): Thenable<Route[]> {
     if (!this.workspaceRoot) {
-      vscode.window.showInformationMessage('No dependency in empty workspace');
+      vscode.window.showInformationMessage('No routes in empty workspace');
       return Promise.resolve([]);
     }
 
     if (element) {
-      return Promise.resolve(
-        this.getDepsInPackageJson(
-          path.join(this.workspaceRoot, 'node_modules', element.label, 'package.json')
-        )
-      );
-    } else {
-      const packageJsonPath = path.join(this.workspaceRoot, 'package.json');
-      if (this.pathExists(packageJsonPath)) {
-        return Promise.resolve(this.getDepsInPackageJson(packageJsonPath));
-      } else {
-        vscode.window.showInformationMessage('Workspace has no package.json');
-        return Promise.resolve([]);
-      }
+      return Promise.resolve(element.children || []);
     }
+
+    if (this.routesMap.size > 0) {
+      return Promise.resolve([...this.routesMap.values()]);
+    }
+
+    const matches: BackendMatch[] = this.context.globalState.get('backendMatches', []);
+    matches.forEach(match => this.addToTree(match));
+    return Promise.resolve([...this.routesMap.values()]);
   }
 
-  /**
-   * Given the path to package.json, read all its dependencies and devDependencies.
-   */
-  private getDepsInPackageJson(packageJsonPath: string): Dependency[] {
-    if (this.pathExists(packageJsonPath)) {
-      const toDep = (moduleName: string, version: string): Dependency => {
-        if (this.pathExists(path.join(this.workspaceRoot, 'node_modules', moduleName))) {
-          return new Dependency(
-            moduleName,
-            version,
-            vscode.TreeItemCollapsibleState.Collapsed
-          );
+  private addToTree(match: BackendMatch) {
+    const segments = match.endpoint.split('/');
+    let currentParent: Route | undefined;
+
+    segments.reduce((acc, segment, index) => {
+      const path = acc + '/' + segment;
+      const method  = match.method;
+      if (!this.routesMap.has(path)) {
+        const isLeaf = index === segments.length - 1;
+        const route = new Route(
+          path,
+          method,
+          vscode.Uri.file(match.file),
+          isLeaf ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed
+        );
+        if (currentParent) {
+          currentParent.children = currentParent.children || [];
+          currentParent.children.push(route);
         } else {
-          return new Dependency(moduleName, version, vscode.TreeItemCollapsibleState.None);
+          this.routesMap.set(path, route);
         }
-      };
-
-      const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
-
-      const deps = packageJson.dependencies
-        ? Object.keys(packageJson.dependencies).map(dep =>
-            toDep(dep, packageJson.dependencies[dep])
-          )
-        : [];
-      const devDeps = packageJson.devDependencies
-        ? Object.keys(packageJson.devDependencies).map(dep =>
-            toDep(dep, packageJson.devDependencies[dep])
-          )
-        : [];
-      return deps.concat(devDeps);
-    } else {
-      return [];
-    }
-  }
-
-  private pathExists(p: string): boolean {
-    try {
-      fs.accessSync(p);
-    } catch (err) {
-      return false;
-    }
-    return true;
+      }
+      currentParent = this.routesMap.get(path);
+      return path;
+    }, '');
   }
 }
 
-class Dependency extends vscode.TreeItem {
+
+class Route extends vscode.TreeItem {
+  children: Route[] | undefined;
+
   constructor(
     public readonly label: string,
-    private version: string,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState
+    private endpoint: string,
+    public readonly uri: vscode.Uri,
+    public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed
   ) {
     super(label, collapsibleState);
-    this.tooltip = `${this.label}-${this.version}`;
-    this.description = this.version;
+    this.tooltip = `${this.label} - ${this.uri.fsPath}`;
+    this.description = this.endpoint;
+
+    this.command = this.collapsibleState === vscode.TreeItemCollapsibleState.None ? {
+      title: "Open File",
+      command: "vscode.open",
+      arguments: [this.uri]
+    } : undefined;
   }
 
   iconPath = {
-    light: path.join(__filename, '..', '..', 'resources', 'light', 'dependency.svg'),
-    dark: path.join(__filename, '..', '..', 'resources', 'dark', 'dependency.svg')
+    light: path.join(__filename, '..', '..', 'resources', 'light', 'endpoint.svg'),
+    dark: path.join(__filename, '..', '..', 'resources', 'dark', 'endpoint.svg')
   };
 }

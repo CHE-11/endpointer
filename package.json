@@ -22,6 +22,11 @@
       "type": "object",
       "title": "endpointer",
       "properties": {
+        "endpointer.useVSCodeInsiders": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use VS Code Insiders as the default URI scheme"
+        },
         "endpointer.endpointTemplateFormat": {
           "type": "string",
           "default": "",
@@ -29,7 +34,7 @@
         },
         "endpointer.endpointRegex": {
           "type": "string",
-          "default": "\/\/ ENDPOINTER <> \"(method)\": \"(GET|POST|PUT|DELETE)\", \"endpoint\": \"(.+)\"",
+          "default": "",
           "description": "Set the format for the endpoint template"
         },
         "endpointer.frontendCallRegex": {
@@ -39,30 +44,33 @@
         },
         "endpointer.linkColor" :{
           "type": "string",
-          "default": "#0000FF",
+          "default": "#2da5f2",
           "description": "The color of the URI link"
-        },
-        "endpointer.showLinkIcon" : {
-          "type": "boolean",
-          "default": true,
-          "description": "Show link icon"
         }
-      
       }
     },
 
     "commands": [
       {
         "command": "extension.reindexWorkspace",
-        "title": "Reindex Workspace"
+        "title": "Endpointer: Reindex Workspace",
+        "icon": "$(refresh)"
       },
       {
-        "command": "extension.pasteEndpointTemplate",
-        "title": "Paste Endpoint Template"
+        "command": "extension.pasteBackendEndpointTemplate",
+        "title": "Endpointer: Paste Backend Template"
+      },
+      {
+        "command": "extension.pasteFrontendEndpointTemplate",
+        "title": "Endpointer: Paste Frontend Template"
       },
       {
         "command": "extension.openEndpoint",
-        "title": "Open Endpoint"
+        "title": "Endpointer: Open Endpoint"
+      },
+      {
+        "command": "extension.formatEndpoints",
+        "title": "Endpointer: Format Endpoints"
       }
     ],
 
@@ -70,21 +78,38 @@
       "editor/context": [
         {
           "when": "editorTextFocus",
-          "command": "extension.pasteEndpointTemplate",
+          "command": "extension.pasteBackendEndpointTemplate",
           "group": "endpointer@1"
+        },
+        {
+          "when": "editorTextFocus",
+          "command": "extension.pasteFrontendEndpointTemplate",
+          "group": "endpointer@1"
+        },
+        {
+          "when": "editorTextFocus",
+          "command": "extension.openEndpoint",
+          "group": "endpointer@1"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "extension.reindexWorkspace",
+          "when": "view == endpointer",
+          "group": "navigation"
         }
       ]
     },
 
     "views": {
-      "explorer": [
+      "explorer": 
+      [
         {
           "id": "endpointer",
           "name": "Endpointer"
         }
       ]
     }
-
   },
   "scripts": {
     "vscode:prepublish": "yarn run compile",
