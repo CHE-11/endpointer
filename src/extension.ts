@@ -48,6 +48,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Perform the indexing operation
     let { backendMatches, frontEndMatches } = await performIndexing(vscode.workspace.workspaceFolders);
+    updateDecorations(vscode.window.activeTextEditor || vscode.window.visibleTextEditors[0]);
 
     // Sort by HTTP verb
     const verbOrder = ["GET", "POST", "PUT", "PATCH", "DELETE"]
