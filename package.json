@@ -29,7 +29,7 @@
         },
         "endpointer.includeInIndex": {
           "type": "string",
-          "default": "*.{ts,js, jsx, tsx, py}",
+          "default": "**/*.{ts,js, jsx, tsx, py}",
           "description": "Glob patterns to include files from indexing"
         },
 
