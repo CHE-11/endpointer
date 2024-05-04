@@ -12,7 +12,7 @@ export function activate(context: vscode.ExtensionContext) {
   // const showLinkIcon = config.get('showLinkIcon');
   const endpointRegexCall = config.get('endpointRegex') as string;
   const endpointRegex = new RegExp(endpointRegexCall, 'g');
-  const frontEndRegex = /^\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"\s*$/gm;
+  const frontEndRegex = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"\s*/g;
 
 
   // Register the tree view
@@ -154,21 +154,6 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage('No active editor available for decoration.');
       return;
     }
-    // const config = vscode.workspace.getConfiguration('endpointer');
-    // const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
-    // const includeInIndex: string = config.get<string>('includeInIndex', '');
-
-    // // Use the excluded from index glob to exclude files from being indexed
-    // const file = editor.document.fileName;
-    // if (excludeFromIndex && excludeFromIndex.length > 0 && file.match(excludeFromIndex)) {
-    //   console.log('File is excluded from indexing: ', file);
-    //   return;
-    // }
-
-    // if (includeInIndex && includeInIndex.length > 0 && !file.match(includeInIndex)) {
-    //   console.log('File is not included in indexing: ', file);
-    //   return;
-    // }
 
 
     const document = editor.document;
