@@ -150,11 +150,26 @@ export function activate(context: vscode.ExtensionContext) {
   const existingDecorations = new Map();
 
   function updateDecorations(editor: vscode.TextEditor) {
-    console.log('Updating decorations...')
     if (!editor) {
       vscode.window.showInformationMessage('No active editor available for decoration.');
       return;
     }
+    const config = vscode.workspace.getConfiguration('endpointer');
+    const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
+
+    const includeInIndex: string = config.get<string>('includeInIndex', '');
+
+    // Make sure that the current file is included in the index 
+    if (!includeInIndex.includes(editor.document.fileName)) {
+      console.log('File is not included in indexing', editor.document.fileName)
+      return;
+    }
+    // Make sure it is not excluded from the index
+    if (excludeFromIndex.includes(editor.document.fileName)) {
+      console.log('File is excluded from indexing', editor.document.fileName)
+      return;
+    }
+
 
     const document = editor.document;
     const text = document.getText();
@@ -249,7 +264,8 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
 
   // Get the excludeFromIndex from the config
   const config = vscode.workspace.getConfiguration('endpointer');
-  const excludeFromIndex: string[] = config.get<string[]>('excludeFromIndex', []);
+  const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
+  const includeInIndex: string = config.get<string>('includeInIndex', '');
   
   if (!workspaceFolders) {
     console.log('No workspace folders found.');
@@ -257,9 +273,8 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
   }
 
   for (const folder of workspaceFolders) {
-    const pattern = new vscode.RelativePattern(folder, '**/*');
-    const files = await vscode.workspace.findFiles(pattern, `{${excludeFromIndex.join(',')}}`);
-
+    const pattern = new vscode.RelativePattern(folder, includeInIndex);
+    const files = await vscode.workspace.findFiles(pattern, excludeFromIndex);
 
       for (const file of files) {
         const document = await vscode.workspace.openTextDocument(file);

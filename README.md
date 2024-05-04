@@ -17,7 +17,8 @@ The extension gives you one option on the right click context menu:
 There are many settings that can be changed: 
 - endpointer.excludeFromIndex ➜ This is an array of glob patterns that will be excluded from the index. 
   - Default is ```["**/node_modules/**", "**/dist/**", "**/build/**", "**/public/**", "**/coverage/**", "**/test/**", "**/tests/**", "**/tmp/**", "**/temp/**", "**/vendor/**", "**/assets/**", "**/lib/**", "**/static/**", "**/out/**", "**/output/**", "**/logs/**", "**/log/**", "**/backup/**", "**/backups/**", "**/cache/**"]```
-
+- endpointer.includeInIndex ➜ This is an array of glob patterns that will be included in the index. 
+  - Default is ```"{**/*.js, **/*.ts, **/*.tsx, **/*.jsx, **/*.py}"```
 - endpointer.useVSCodeInsiders ➜ This is a boolean that determines if the extension uses the VS Code Insiders API.
   - Default is ```false```
 - endpointer.endpointTemplateFormat - This is the format that is used to get the details about the endpoint on the backend. 
