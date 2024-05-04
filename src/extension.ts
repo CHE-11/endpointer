@@ -247,38 +247,49 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
   const backendMatches = [];
   const frontEndMatches = [];
 
+  // Get the excludeFromIndex from the config
+  const config = vscode.workspace.getConfiguration('endpointer');
+  const excludeFromIndex: string[] = config.get<string[]>('excludeFromIndex', []);
+  
+  if (!workspaceFolders) {
+    console.log('No workspace folders found.');
+    return;
+  }
+
   for (const folder of workspaceFolders) {
-    const files = await vscode.workspace.findFiles(new vscode.RelativePattern(folder, '**/*'), '**/node_modules/**');
+    const pattern = new vscode.RelativePattern(folder, '**/*');
+    const files = await vscode.workspace.findFiles(pattern, `{${excludeFromIndex.join(',')}}`);
 
-    for (const file of files) {
-      const document = await vscode.workspace.openTextDocument(file);
-      const text = document.getText();
-      const backend = /\/\/\s*ENDPOINTER\s*<backend>\s*method:\s*"([^"]*)",\s*endpoint:\s*"([^"]*)"/g;
-      let match;
-      // console log the file path
-      console.log(`File path: ${document.fileName}`);
 
-      while ((match = backend.exec(text)) !== null) {
-        // Get the line number where the match was found
-        const line_number = document.positionAt(match.index).line;
+      for (const file of files) {
+        const document = await vscode.workspace.openTextDocument(file);
+        const text = document.getText();
+        const backend = /\/\/\s*ENDPOINTER\s*<backend>\s*method:\s*"([^"]*)",\s*endpoint:\s*"([^"]*)"/g;
+        let match;
+        // console log the file path
+        console.log(`File path: ${document.fileName}`);
 
-        const uri = getFileURI(line_number, document);
-        // console.log(`Found method: ${match[1]}, endpoint: ${match[2]}, file: ${document.fileName}`);
-        // Process or store these matches as needed
-        backendMatches.push({ method: match[1], endpoint: match[2], file: document.fileName, uri: uri});
+        while ((match = backend.exec(text)) !== null) {
+          // Get the line number where the match was found
+          const line_number = document.positionAt(match.index).line;
+
+          const uri = getFileURI(line_number, document);
+          // console.log(`Found method: ${match[1]}, endpoint: ${match[2]}, file: ${document.fileName}`);
+          // Process or store these matches as needed
+          backendMatches.push({ method: match[1], endpoint: match[2], file: document.fileName, uri: uri});
+        }
+
+        const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*([^]*)/g;
+        let frontMatch;
+        while ((frontMatch = frontend.exec(text)) !== null) {
+          // console.log(`Found frontend call: ${frontMatch[1]}, file: ${document.fileName}`);
+          // Process or store these matches as needed
+          const line_number = document.positionAt(frontMatch.index).line;
+          const uri = getFileURI(line_number, document);
+
+          frontEndMatches.push({ method: frontMatch[1], endpoint: frontMatch[2], file: document.fileName, uri: uri});
+        }
       }
-
-      const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*([^]*)/g;
-      let frontMatch;
-      while ((frontMatch = frontend.exec(text)) !== null) {
-        // console.log(`Found frontend call: ${frontMatch[1]}, file: ${document.fileName}`);
-        // Process or store these matches as needed
-        const line_number = document.positionAt(frontMatch.index).line;
-        const uri = getFileURI(line_number, document);
-
-        frontEndMatches.push({ method: frontMatch[1], endpoint: frontMatch[2], file: document.fileName, uri: uri});
-      }
-    }
   }
 
   // Return the list of endpoints found
