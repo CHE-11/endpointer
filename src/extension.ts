@@ -154,21 +154,21 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage('No active editor available for decoration.');
       return;
     }
-    const config = vscode.workspace.getConfiguration('endpointer');
-    const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
+    // const config = vscode.workspace.getConfiguration('endpointer');
+    // const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
+    // const includeInIndex: string = config.get<string>('includeInIndex', '');
 
-    const includeInIndex: string = config.get<string>('includeInIndex', '');
+    // // Use the excluded from index glob to exclude files from being indexed
+    // const file = editor.document.fileName;
+    // if (excludeFromIndex && excludeFromIndex.length > 0 && file.match(excludeFromIndex)) {
+    //   console.log('File is excluded from indexing: ', file);
+    //   return;
+    // }
 
-    // Make sure that the current file is included in the index 
-    if (!includeInIndex.includes(editor.document.fileName)) {
-      console.log('File is not included in indexing', editor.document.fileName)
-      return;
-    }
-    // Make sure it is not excluded from the index
-    if (excludeFromIndex.includes(editor.document.fileName)) {
-      console.log('File is excluded from indexing', editor.document.fileName)
-      return;
-    }
+    // if (includeInIndex && includeInIndex.length > 0 && !file.match(includeInIndex)) {
+    //   console.log('File is not included in indexing: ', file);
+    //   return;
+    // }
 
 
     const document = editor.document;
@@ -178,7 +178,7 @@ export function activate(context: vscode.ExtensionContext) {
     let match;
     while ((match = frontEndRegex.exec(text)) !== null) {
 
-      console.log('Frontend match: ', match);
+      // console.log('Frontend match: ', match);
 
       const uri = match[1];
       const startPos = document.positionAt(match.index);
@@ -192,7 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
       // Find the matching API call from the backendMatches based on method and endpoint
       const backendMatches = context.globalState.get('backendMatches', []);
       const matchingBackend = backendMatches.find((backend: any) => backend.method === method && backend.endpoint === endpoint) as any;
-      console.log('Matching backend: ', matchingBackend);
+      // console.log('Matching backend: ', matchingBackend);
       
       const final_uri = matchingBackend ? matchingBackend.uri : 'Cannot find matching backend endpoint';
 
@@ -266,23 +266,28 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
   const config = vscode.workspace.getConfiguration('endpointer');
   const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
   const includeInIndex: string = config.get<string>('includeInIndex', '');
+
+  // console.log('Excluded from index: ', excludeFromIndex);
+  // console.log('Included in index: ', includeInIndex);
   
   if (!workspaceFolders) {
-    console.log('No workspace folders found.');
+    // console.log('No workspace folders found.');
     return;
   }
 
   for (const folder of workspaceFolders) {
-    const pattern = new vscode.RelativePattern(folder, includeInIndex);
-    const files = await vscode.workspace.findFiles(pattern, excludeFromIndex);
+    const files = await vscode.workspace.findFiles(includeInIndex, excludeFromIndex);
+
+    // console.log('Files found: ', files.length)
 
       for (const file of files) {
+
         const document = await vscode.workspace.openTextDocument(file);
         const text = document.getText();
         const backend = /\/\/\s*ENDPOINTER\s*<backend>\s*method:\s*"([^"]*)",\s*endpoint:\s*"([^"]*)"/g;
         let match;
         // console log the file path
-        console.log(`File path: ${document.fileName}`);
+        // console.log(`File path: ${document.fileName}`);
 
         while ((match = backend.exec(text)) !== null) {
           // Get the line number where the match was found

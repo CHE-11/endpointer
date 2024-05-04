@@ -2,7 +2,7 @@
   "name": "endpointer",
   "displayName": "Endpointer",
   "description": "",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "license": "MIT",
   "icon": "/icon.png",
   "repository": {
@@ -24,13 +24,13 @@
       "properties": {
         "endpointer.excludeFromIndex": {
           "type": "string",
-          "default": "{**/node_modules/**, **/dist/**, **/build/**, **/public/**, **/coverage/**, **/test/**, **/tests/**, **/tmp/**, **/temp/**, **/vendor/**, **/assets/**, **/lib/**, **/static/**, **/out/**, **/output/**, **/logs/**, **/log/**, **/backup/**, **/backups/**, **/cache/**}",
+          "default": "**/node_modules/**, **/dist/**, **/build/**, **/public/**, **/coverage/**, **/test/**, **/tests/**, **/tmp/**, **/temp/**, **/vendor/**, **/assets/**, **/lib/**, **/static/**, **/out/**, **/output/**, **/logs/**, **/log/**, **/backup/**, **/backups/**, **/cache/**",
           "description": "Glob patterns to exclude files from indexing"
         },
         "endpointer.includeInIndex": {
           "type": "string",
-          "default": "{**/*.js, **/*.ts, **/*.tsx, **/*.jsx, **/*.py}",
-          "description": "Glob patterns to exclude files from indexing"
+          "default": "*.{ts,js, jsx, tsx, py}",
+          "description": "Glob patterns to include files from indexing"
         },
 
         "endpointer.useVSCodeInsiders": {
