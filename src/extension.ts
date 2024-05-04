@@ -35,9 +35,13 @@ export function activate(context: vscode.ExtensionContext) {
   let indexWorkspaceCommand = vscode.commands.registerCommand('extension.reindexWorkspace', async () => {
     // Ensure there is at least one folder opened in the editor
     if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
-        vscode.window.showInformationMessage('No folder open to index.');
-        return;
+      vscode.window.showInformationMessage('No folder open to index.');
+      return;
     }
+
+    // Clear the existing matches
+    context.globalState.update('backendMatches', []);
+    context.globalState.update('frontEndMatches', []);
 
     // Show status bar item while indexing
     statusBar.show();
