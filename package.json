@@ -2,7 +2,7 @@
   "name": "endpointer",
   "displayName": "Endpointer",
   "description": "",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "license": "MIT",
   "icon": "/icon.png",
   "repository": {
@@ -57,12 +57,12 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "extension.pasteBackendEndpointTemplate",
-        "title": "Endpointer: Paste Backend Template"
-      },
-      {
         "command": "extension.pasteFrontendEndpointTemplate",
         "title": "Endpointer: Paste Frontend Template"
+      },
+      {
+        "command": "extension.pasteBackendEndpointTemplate",
+        "title": "Endpointer: Paste Backend Template"
       },
       {
         "command": "extension.openEndpoint",
@@ -78,17 +78,17 @@
       "editor/context": [
         {
           "when": "editorTextFocus",
-          "command": "extension.pasteBackendEndpointTemplate",
-          "group": "endpointer@1"
-        },
-        {
-          "when": "editorTextFocus",
           "command": "extension.pasteFrontendEndpointTemplate",
           "group": "endpointer@1"
         },
         {
           "when": "editorTextFocus",
-          "command": "extension.openEndpoint",
+          "command": "extension.pasteBackendEndpointTemplate",
+          "group": "endpointer@1"
+        },
+        {
+          "when": "editorTextFocus",
+          "command": "extension.reindexWorkspace",
           "group": "endpointer@1"
         }
       ],

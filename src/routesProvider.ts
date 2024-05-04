@@ -26,75 +26,69 @@ export class RoutesProvider implements vscode.TreeDataProvider<Route> {
   }
 
   getChildren(element?: Route): Thenable<Route[]> {
+
     if (!this.workspaceRoot) {
       vscode.window.showInformationMessage('No routes in empty workspace');
       return Promise.resolve([]);
     }
 
-    if (element) {
-      return Promise.resolve(element.children || []);
+    if (!element) {
+      if (this.routesMap.size === 0) { // Ensure this condition is checked properly
+        const matches: BackendMatch[] = this.context.globalState.get('backendMatches', []);
+        matches.forEach(match => this.addToTree(match));
+      }
+      const sortedRoutes = Array.from(this.routesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+      return Promise.resolve(sortedRoutes);
     }
 
-    if (this.routesMap.size > 0) {
-      return Promise.resolve([...this.routesMap.values()]);
-    }
-
-    const matches: BackendMatch[] = this.context.globalState.get('backendMatches', []);
-    matches.forEach(match => this.addToTree(match));
-    return Promise.resolve([...this.routesMap.values()]);
+    // Since it's a flat list, return empty array if element is provided
+    return Promise.resolve([]);
   }
 
   private addToTree(match: BackendMatch) {
-    const segments = match.endpoint.split('/');
-    let currentParent: Route | undefined;
+    const endpoint = match.endpoint;
+    const method = match.method;
+    const key = `${method} ${endpoint}`; // Create a unique key using both method and endpoint
 
-    segments.reduce((acc, segment, index) => {
-      const path = acc + '/' + segment;
-      const method  = match.method;
-      if (!this.routesMap.has(path)) {
-        const isLeaf = index === segments.length - 1;
+    // Check if the unique key exists in the map
+    if (!this.routesMap.has(key)) {
         const route = new Route(
-          path,
-          method,
-          vscode.Uri.file(match.file),
-          isLeaf ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed
+            endpoint, // Use the key as the label for clarity
+            method,
+            vscode.Uri.file(match.file),
+            vscode.TreeItemCollapsibleState.None, // Flat list, items do not collapse
+            key
         );
-        if (currentParent) {
-          currentParent.children = currentParent.children || [];
-          currentParent.children.push(route);
-        } else {
-          this.routesMap.set(path, route);
-        }
-      }
-      currentParent = this.routesMap.get(path);
-      return path;
-    }, '');
+        this.routesMap.set(key, route);
+        console.log("Added to tree: ", match);
+    }
   }
-}
 
+
+}
+  
 
 class Route extends vscode.TreeItem {
-  children: Route[] | undefined;
-
   constructor(
-    public readonly label: string,
-    private endpoint: string,
-    public readonly uri: vscode.Uri,
-    public readonly collapsibleState: vscode.TreeItemCollapsibleState = vscode.TreeItemCollapsibleState.Collapsed
+      public readonly label: string,
+      private method: string,
+      public readonly uri: vscode.Uri,
+      public readonly collapsibleState: vscode.TreeItemCollapsibleState,
+      private readonly key: string
   ) {
-    super(label, collapsibleState);
-    this.tooltip = `${this.label} - ${this.uri.fsPath}`;
-    this.description = this.endpoint;
+      super(label, collapsibleState);
+      this.tooltip = `${this.method} ${this.label} - ${this.uri.fsPath}`;
+      this.description = this.method;
 
-    this.command = this.collapsibleState === vscode.TreeItemCollapsibleState.None ? {
-      title: "Open File",
-      command: "vscode.open",
-      arguments: [this.uri]
-    } : undefined;
+      this.command = {
+          title: "Open File",
+          command: "vscode.open",
+          arguments: [this.uri]
+      };
+
+      this.iconPath = {
+          light: path.join(__filename, '..', '..', 'src/resources', 'dark-endpoint.svg'),
+          dark: path.join(__filename, '..', '..', 'src/resources', 'light-endpoint.svg')
+      };
   }
-
-  iconPath = {
-    light: path.join(__filename, '..', '..', 'resources', 'light', 'endpoint.svg'),
-    dark: path.join(__filename, '..', '..', 'resources', 'dark', 'endpoint.svg')
-  };
 }
