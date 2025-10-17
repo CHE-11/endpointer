@@ -2,9 +2,9 @@
   "name": "endpointer",
   "displayName": "Endpointer",
   "description": "",
-  "version": "1.0.7",
+  "version": "1.0.21",
   "license": "MIT",
-  "icon": "/icon.png",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/CHE-11/endpointer.git"
@@ -32,7 +32,6 @@
           "default": "**/*.{ts,js, jsx, tsx, py}",
           "description": "Glob patterns to include files from indexing"
         },
-
         "endpointer.useVSCodeInsiders": {
           "type": "boolean",
           "default": false,
@@ -53,14 +52,13 @@
           "default": "https?://[^\\s]+",
           "description": "The color of the URI link"
         },
-        "endpointer.linkColor" :{
+        "endpointer.linkColor": {
           "type": "string",
           "default": "#2da5f2",
           "description": "The color of the URI link"
         }
       }
     },
-
     "commands": [
       {
         "command": "extension.reindexWorkspace",
@@ -84,7 +82,6 @@
         "title": "Endpointer: Format Endpoints"
       }
     ],
-
     "menus": {
       "editor/context": [
         {
@@ -106,29 +103,33 @@
       "view/title": [
         {
           "command": "extension.reindexWorkspace",
-          "when": "view == endpointer",
+          "when": "view == endpointer.routes",
           "group": "navigation"
         }
       ]
     },
-
-    "views": {
-      "explorer": 
-      [
+    "viewsContainers": {
+      "activitybar": [
         {
           "id": "endpointer",
-          "name": "Endpointer"
+          "title": "Endpointer",
+          "icon": "sidebar.png"
+        }
+      ]
+    },
+    "views": {
+      "endpointer": [
+        {
+          "id": "endpointer.routes",
+          "name": "Routes"
         }
       ]
     }
   },
   "scripts": {
-    "vscode:prepublish": "yarn run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "pretest": "yarn run compile && yarn run lint",
-    "lint": "eslint src --ext ts",
-    "test": "vscode-test"
+    "package": "npm version patch --no-git-tag-version && npm run compile && node package.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.88.0",

@@ -12,18 +12,15 @@ export function activate(context: vscode.ExtensionContext) {
   // const showLinkIcon = config.get('showLinkIcon');
   const endpointRegexCall = config.get('endpointRegex') as string;
   const endpointRegex = new RegExp(endpointRegexCall, 'g');
-  const frontEndRegex = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"\s*/g;
+  // Match a single comment line. Do not eat the newline at the end.
+  const frontEndRegex = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
 
 
-  // Register the tree view
-  const rootPath =
-    vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
-      ? vscode.workspace.workspaceFolders[0].uri.fsPath
-      : undefined;
-    vscode.window.registerTreeDataProvider(
-      'endpointer',
-      new RoutesProvider(rootPath ?? '', context)
-    );
+	// Register the tree view in the Endpointer activity bar
+	const rootPath =
+		vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
+			? vscode.workspace.workspaceFolders[0].uri.fsPath
+			: undefined;
 
   // --------------------------------------------------------------------------------------------------------------------
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -48,7 +45,6 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Perform the indexing operation
     let { backendMatches, frontEndMatches } = await performIndexing(vscode.workspace.workspaceFolders);
-    updateDecorations(vscode.window.activeTextEditor || vscode.window.visibleTextEditors[0]);
 
     // Sort by HTTP verb
     const verbOrder = ["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -58,10 +54,13 @@ export function activate(context: vscode.ExtensionContext) {
       return aIndex - bIndex;
     });
 
-
-    // Save the matches to the global scope for later use
+    // Save the matches first so downstream consumers (hover/links) see fresh data
     context.globalState.update('backendMatches', backendMatches);
     context.globalState.update('frontEndMatches', frontEndMatches);
+
+    // Recompute decorations with fresh data
+    resetDecorations();
+    updateDecorations(vscode.window.activeTextEditor || vscode.window.visibleTextEditors[0]);
 
     console.log('Backend matches: ', backendMatches);
     console.log('Frontend matches: ', frontEndMatches);
@@ -74,12 +73,12 @@ export function activate(context: vscode.ExtensionContext) {
     statusBar.hide();
   });
   
-  const routesProvider = new RoutesProvider(vscode.workspace.rootPath || '', context);
-  vscode.window.registerTreeDataProvider('endpointer', routesProvider);
+	const routesProvider = new RoutesProvider(vscode.workspace.rootPath || '', context);
+	vscode.window.registerTreeDataProvider('endpointer.routes', routesProvider);
 
-  vscode.window.createTreeView('endpointer', {
-    treeDataProvider: routesProvider
-  });
+	vscode.window.createTreeView('endpointer.routes', {
+		treeDataProvider: routesProvider
+	});
 
 
   // --------------------------------------------------------------------------------------------------------------------
@@ -127,13 +126,33 @@ export function activate(context: vscode.ExtensionContext) {
   
   });
 
-  const handleLinkClickCommand = vscode.commands.registerCommand('extension.openEndpoint', uri => {
-
-    if (!uri || uri == 'Cannot find matching backend endpoint') {
+  const handleLinkClickCommand = vscode.commands.registerCommand('extension.openEndpoint', async (...args: any[]) => {
+    const uriArg = args[0];
+    if (!uriArg || uriArg === 'Cannot find matching backend endpoint') {
       vscode.window.showWarningMessage('No URI found to open.');
       return;
     }
-    vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(uri));
+
+    try {
+      const { fileUri, line } = parseEndpointerUriString(String(uriArg));
+      if (typeof line === 'number') {
+        await vscode.window.showTextDocument(fileUri, { selection: new vscode.Range(new vscode.Position(line, 0), new vscode.Position(line, 0)) });
+      } else {
+        await vscode.window.showTextDocument(fileUri);
+      }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Failed to open file: ${e?.message || e}`);
+    }
+  });
+  
+  // Copies provided text to the clipboard
+  const copyToClipboardCommand = vscode.commands.registerCommand('extension.copyToClipboard', async (text: string) => {
+    if (!text) {
+      vscode.window.showWarningMessage('No text to copy.');
+      return;
+    }
+    await vscode.env.clipboard.writeText(text);
+    vscode.window.setStatusBarMessage('Copied to clipboard', 2000);
   });
   
   // set the link color
@@ -159,6 +178,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     const document = editor.document;
     const text = document.getText();
+    // Ensure regex starts from 0 on each run
+    frontEndRegex.lastIndex = 0;
     const linkDecorations: vscode.DecorationOptions[] = [];
 
     let match;
@@ -166,14 +187,14 @@ export function activate(context: vscode.ExtensionContext) {
 
       // console.log('Frontend match: ', match);
 
-      const uri = match[1];
-      const startPos = document.positionAt(match.index);
-      const endPos = document.positionAt(match.index + match[0].length);
-      const range = new vscode.Range(startPos, endPos);
-      const key = rangeKey(range);
-
       const method = match[1];
       const endpoint = match[2];
+      // Trim any trailing spaces so underline stops at the last character
+      const matchedText = match[0].replace(/[ \t]+$/, '');
+      const startPos = document.positionAt(match.index);
+      const endPos = document.positionAt(match.index + matchedText.length);
+      const range = new vscode.Range(startPos, endPos);
+      const key = rangeKey(range);
 
       // Find the matching API call from the backendMatches based on method and endpoint
       const backendMatches = context.globalState.get('backendMatches', []);
@@ -189,20 +210,28 @@ export function activate(context: vscode.ExtensionContext) {
         // console.log('Decoration does not exist for range: ', key);
       }
 
-      const messageMarkdown = new vscode.MarkdownString(`[Open File: ${final_uri}](command:extension.openEndpoint?${encodeURIComponent(JSON.stringify(final_uri))})`);
-      messageMarkdown.supportHtml = true;
-      messageMarkdown.isTrusted = true;
+      // Encode args as an array so VS Code passes them positionally
+      const encodedArg = encodeURIComponent(JSON.stringify([final_uri]));
+      // Escape Markdown-special characters in label so underscores/brackets render literally
+      const escapedLabel = `Open File: ${String(final_uri)
+        .replace(/\\/g, "\\\\")
+        .replace(/_/g, "\\_")
+        .replace(/\*/g, "\\*")
+        .replace(/\[/g, "\\[")
+        .replace(/\]/g, "\\]")}`;
+      const firstLine = new vscode.MarkdownString(`[${escapedLabel}](command:extension.openEndpoint?${encodedArg})`);
+      firstLine.isTrusted = true;
 
       const decoration = {
         range: range,
-        hoverMessage: messageMarkdown,
+        hoverMessage: [firstLine],
         // renderOptions: { 
         //   after: {
         //     contentText: showLinkIcon ? '🔗' : '',
         //   }
         // },
         command: 'extension.openEndpoint',
-        arguments: [uri]
+        arguments: [final_uri]
       };
 
       existingDecorations.set(key, true);
@@ -240,7 +269,36 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --------------------------------------------------------------------------------------------------------------------
 
-  context.subscriptions.push( pasteBackendDisposable, pasteFrontendDisposable, handleLinkClickCommand, indexWorkspaceCommand, statusBar, formatEndpoints);
+  context.subscriptions.push( pasteBackendDisposable, pasteFrontendDisposable, handleLinkClickCommand, copyToClipboardCommand, indexWorkspaceCommand, statusBar, formatEndpoints);
+
+  // Provide real document links so Ctrl+Click jumps directly to the file
+  const docLinkProvider = vscode.languages.registerDocumentLinkProvider({ scheme: 'file' }, {
+    provideDocumentLinks(doc) {
+      const links: vscode.DocumentLink[] = [];
+      const text = doc.getText();
+      const re = new RegExp(frontEndRegex.source, 'g');
+      let m: RegExpExecArray | null;
+      const backendMatches = context.globalState.get('backendMatches', [] as any[]);
+      while ((m = re.exec(text)) !== null) {
+        const method = m[1];
+        const endpoint = m[2];
+        const matchText = m[0].replace(/[ \t]+$/, '');
+        const start = doc.positionAt(m.index);
+        const end = doc.positionAt(m.index + matchText.length);
+        const range = new vscode.Range(start, end);
+        const backend = (backendMatches as any[]).find(b => b.method === method && b.endpoint === endpoint) as any;
+        if (!backend) continue; // Only create a link when we know the target
+        try {
+          const { fileUri } = parseEndpointerUriString(String(backend.uri));
+          links.push(new vscode.DocumentLink(range, fileUri));
+        } catch {
+          // ignore malformed URIs
+        }
+      }
+      return links;
+    }
+  });
+  context.subscriptions.push(docLinkProvider);
 }
 
 async function performIndexing(workspaceFolders: any): Promise<any> {
@@ -313,6 +371,42 @@ function getFileURI(line_number: number, document: vscode.TextDocument): string 
 
 	return url;
 };
+
+function parseEndpointerUriString(value: string): { fileUri: vscode.Uri, line?: number } {
+  // Accept forms like:
+  // - vscode://file/<absolute path>:<line>
+  // - vscode-insiders://file/<absolute path>:<line>
+  // - <absolute path>:<line>
+  // - <absolute path>
+  let raw = value.trim();
+
+  const prefixMatch = raw.match(/^(vscode(?:-insiders)?:\/\/file)(.*)$/);
+  if (prefixMatch) {
+    raw = prefixMatch[2]; // retain leading path with potential leading slash
+  }
+
+  // Remove one leading slash if followed by a Windows drive letter
+  if (raw.startsWith('/') && /^[A-Za-z]:/.test(raw.slice(1))) {
+    raw = raw.slice(1);
+  }
+
+  // Separate trailing :line if present (be careful with Windows drive colon)
+  const lastColon = raw.lastIndexOf(':');
+  let fsPath = raw;
+  let line: number | undefined = undefined;
+  if (lastColon > 1) {
+    const maybeLine = raw.slice(lastColon + 1);
+    const parsed = Number(maybeLine);
+    if (!Number.isNaN(parsed)) {
+      line = parsed;
+      fsPath = raw.slice(0, lastColon);
+    }
+  }
+
+  // Create a file URI from the absolute filesystem path
+  const fileUri = vscode.Uri.file(fsPath);
+  return { fileUri, line };
+}
 
 export function deactivate() {
 }
