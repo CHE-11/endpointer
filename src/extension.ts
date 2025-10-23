@@ -1,7 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { RoutesProvider } from './routesProvider';
+import { RoutesProvider, FrontendCallsProvider } from './routesProvider';
  
 
 
@@ -68,6 +68,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.window.showInformationMessage('Indexing completed. Found ' + backendMatches.length + ' endpoints & ' + frontEndMatches.length + ' frontend calls.');
 
     routesProvider.refresh();
+    frontendCallsProvider.refresh();
 
     // Hide the status bar item when done
     statusBar.hide();
@@ -76,9 +77,57 @@ export function activate(context: vscode.ExtensionContext) {
 	const routesProvider = new RoutesProvider(vscode.workspace.rootPath || '', context);
 	vscode.window.registerTreeDataProvider('endpointer.routes', routesProvider);
 
-	vscode.window.createTreeView('endpointer.routes', {
+	const treeView = vscode.window.createTreeView('endpointer.routes', {
 		treeDataProvider: routesProvider
 	});
+
+  const frontendCallsProvider = new FrontendCallsProvider(vscode.workspace.rootPath || '', context);
+  vscode.window.registerTreeDataProvider('endpointer.frontendCalls', frontendCallsProvider);
+
+  vscode.window.createTreeView('endpointer.frontendCalls', {
+    treeDataProvider: frontendCallsProvider
+  });
+
+  // Handle double-click on backend method items to open the file
+  let lastClickTime = 0;
+  let lastClickedItem: any = null;
+  const DOUBLE_CLICK_THRESHOLD = 300; // milliseconds
+
+  treeView.onDidChangeSelection(async (e) => {
+    if (e.selection.length === 0) return;
+    const item = e.selection[0];
+    
+    // Only handle MethodItem double-clicks
+    if (item && (item as any).contextValue === 'method') {
+      const now = Date.now();
+      const isDoubleClick = (now - lastClickTime < DOUBLE_CLICK_THRESHOLD) && (lastClickedItem === item);
+      
+      if (isDoubleClick) {
+        // Double-click: open the backend file
+        const methodItem = item as any;
+        if (methodItem.fileUri) {
+          try {
+            const { fileUri, line } = parseEndpointerUriString(String(methodItem.openUri));
+            if (typeof line === 'number') {
+              await vscode.window.showTextDocument(fileUri, { 
+                selection: new vscode.Range(new vscode.Position(line, 0), new vscode.Position(line, 0)) 
+              });
+            } else {
+              await vscode.window.showTextDocument(fileUri);
+            }
+          } catch (e: any) {
+            vscode.window.showErrorMessage(`Failed to open file: ${e?.message || e}`);
+          }
+        }
+        lastClickTime = 0;
+        lastClickedItem = null;
+      } else {
+        // Single-click: just track for potential double-click
+        lastClickTime = now;
+        lastClickedItem = item;
+      }
+    }
+  });
 
 
   // --------------------------------------------------------------------------------------------------------------------

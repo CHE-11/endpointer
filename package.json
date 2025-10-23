@@ -2,7 +2,7 @@
   "name": "endpointer",
   "displayName": "Endpointer",
   "description": "",
-  "version": "1.0.21",
+  "version": "1.0.25",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {
@@ -105,6 +105,11 @@
           "command": "extension.reindexWorkspace",
           "when": "view == endpointer.routes",
           "group": "navigation"
+        },
+        {
+          "command": "extension.reindexWorkspace",
+          "when": "view == endpointer.frontendCalls",
+          "group": "navigation"
         }
       ]
     },
@@ -121,7 +126,11 @@
       "endpointer": [
         {
           "id": "endpointer.routes",
-          "name": "Routes"
+          "name": "Backend Routes"
+        },
+        {
+          "id": "endpointer.frontendCalls",
+          "name": "Frontend Calls"
         }
       ]
     }

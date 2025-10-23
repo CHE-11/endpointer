@@ -8,7 +8,14 @@ interface BackendMatch {
   uri: string;
 }
 
-type TreeNode = SegmentItem | MethodItem;
+interface FrontendMatch {
+  method: string;
+  endpoint: string;
+  file: string;
+  uri: string;
+}
+
+type TreeNode = SegmentItem | MethodItem | FrontendCallItem;
 
 export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | void> = new vscode.EventEmitter<TreeNode | undefined | void>();
@@ -44,16 +51,26 @@ export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
       return Promise.resolve(element.getSortedChildren());
     }
 
+    if (element instanceof MethodItem) {
+      return Promise.resolve(element.getFrontendCalls());
+    }
+
     return Promise.resolve([]);
   }
 
   private buildTree(): void {
     const matches: BackendMatch[] = this.context.globalState.get('backendMatches', []);
+    const frontendMatches: FrontendMatch[] = this.context.globalState.get('frontEndMatches', []);
     const segmentRootByName = new Map<string, SegmentItem>();
 
     for (const match of matches) {
       const endpoint = sanitizeEndpoint(match.endpoint);
       const segments = endpoint.split('/').filter(Boolean);
+
+      // Find all frontend calls that match this backend endpoint
+      const matchingFrontendCalls = frontendMatches.filter(
+        fm => fm.method === match.method && fm.endpoint === match.endpoint
+      );
 
       if (segments.length === 0) {
         // root endpoint '/': put method directly under a synthetic root segment
@@ -62,7 +79,7 @@ export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
           rootSeg = new SegmentItem('/', vscode.TreeItemCollapsibleState.Collapsed);
           segmentRootByName.set('/', rootSeg);
         }
-        rootSeg.addChild(new MethodItem(match.method, match.endpoint, vscode.Uri.file(match.file), match.uri));
+        rootSeg.addChild(new MethodItem(match.method, match.endpoint, vscode.Uri.file(match.file), match.uri, matchingFrontendCalls));
         continue;
       }
 
@@ -81,10 +98,38 @@ export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
       }
 
       // attach method leaf to the final segment
-      current.addChild(new MethodItem(match.method, match.endpoint, vscode.Uri.file(match.file), match.uri));
+      current.addChild(new MethodItem(match.method, match.endpoint, vscode.Uri.file(match.file), match.uri, matchingFrontendCalls));
     }
 
     this.roots = Array.from(segmentRootByName.values());
+  }
+}
+
+export class FrontendCallsProvider implements vscode.TreeDataProvider<FrontendCallItem> {
+  private _onDidChangeTreeData: vscode.EventEmitter<FrontendCallItem | undefined | void> = new vscode.EventEmitter<FrontendCallItem | undefined | void>();
+  readonly onDidChangeTreeData: vscode.Event<FrontendCallItem | undefined | void> = this._onDidChangeTreeData.event;
+
+  constructor(private workspaceRoot: string, private context: vscode.ExtensionContext) {}
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire();
+  }
+
+  getTreeItem(element: FrontendCallItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(element?: FrontendCallItem): Thenable<FrontendCallItem[]> {
+    if (!this.workspaceRoot) {
+      return Promise.resolve([]);
+    }
+
+    if (!element) {
+      const frontendMatches: FrontendMatch[] = this.context.globalState.get('frontEndMatches', []);
+      return Promise.resolve(frontendMatches.map(fm => new FrontendCallItem(fm.file, fm.uri, fm.method, fm.endpoint)));
+    }
+
+    return Promise.resolve([]);
   }
 }
 
@@ -114,7 +159,7 @@ class SegmentItem extends vscode.TreeItem {
     const methods: MethodItem[] = [];
     for (const c of this.children) {
       if (c instanceof SegmentItem) segments.push(c);
-      else methods.push(c);
+      else if (c instanceof MethodItem) methods.push(c);
     }
     segments.sort((a, b) => (a.label as string).localeCompare(b.label as string));
     // sort methods by HTTP verb order then name
@@ -132,25 +177,81 @@ class SegmentItem extends vscode.TreeItem {
 }
 
 class MethodItem extends vscode.TreeItem {
+  private frontendCalls: FrontendCallItem[] = [];
+  public readonly callCount: number;
+
   constructor(
     public readonly method: string,
     public readonly endpoint: string,
     public readonly fileUri: vscode.Uri,
-    public readonly openUri: string
+    public readonly openUri: string,
+    frontendMatches: FrontendMatch[]
   ) {
-    super(method, vscode.TreeItemCollapsibleState.None);
+    const callCount = frontendMatches.length;
+    const collapsibleState = callCount > 0 
+      ? vscode.TreeItemCollapsibleState.Collapsed 
+      : vscode.TreeItemCollapsibleState.None;
+    
+    super(`${method} ${endpoint}`, collapsibleState);
+    
+    this.callCount = callCount;
     this.tooltip = `${this.method} ${this.endpoint} - ${this.fileUri.fsPath}`;
-    this.description = this.endpoint;
-    this.command = {
-      title: 'Open File',
-      command: 'vscode.open',
-      arguments: [this.fileUri]
-    };
+    this.description = callCount > 0 ? `${callCount}` : '';
+    
+    // Don't set a default command - we'll handle clicks in extension.ts
     this.iconPath = {
       light: path.join(__filename, '..', '..', 'src/resources', 'dark-endpoint.svg'),
       dark: path.join(__filename, '..', '..', 'src/resources', 'light-endpoint.svg')
     };
     this.contextValue = 'method';
+
+    // Create frontend call items
+    this.frontendCalls = frontendMatches.map(fm => new FrontendCallItem(fm.file, fm.uri, fm.method, fm.endpoint));
+  }
+
+  getFrontendCalls(): FrontendCallItem[] {
+    return this.frontendCalls;
+  }
+}
+
+class FrontendCallItem extends vscode.TreeItem {
+  constructor(
+    public readonly filePath: string,
+    public readonly openUri: string,
+    public readonly method?: string,
+    public readonly endpoint?: string
+  ) {
+    const fileName = path.basename(filePath);
+    super(fileName, vscode.TreeItemCollapsibleState.None);
+    
+    // Create tooltip with method and endpoint if available
+    if (method && endpoint) {
+      this.tooltip = `${method} ${endpoint} - ${filePath}`;
+    } else {
+      this.tooltip = filePath;
+    }
+    
+    // Show relative path or method+endpoint in description
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    let description = filePath;
+    if (workspaceRoot && filePath.startsWith(workspaceRoot)) {
+      description = path.relative(workspaceRoot, filePath);
+    }
+    
+    // For standalone frontend calls list, show method+endpoint instead
+    if (method && endpoint) {
+      this.label = `${method} ${endpoint}`;
+      this.description = description;
+    } else {
+      this.description = description;
+    }
+    
+    this.command = {
+      title: 'Open Frontend File',
+      command: 'extension.openEndpoint',
+      arguments: [openUri]
+    };
+    this.contextValue = 'frontendCall';
   }
 }
 
