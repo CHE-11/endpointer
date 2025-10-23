@@ -198,7 +198,13 @@ class MethodItem extends vscode.TreeItem {
     this.tooltip = `${this.method} ${this.endpoint} - ${this.fileUri.fsPath}`;
     this.description = callCount > 0 ? `${callCount}` : '';
     
-    // Don't set a default command - we'll handle clicks in extension.ts
+    // Set command to open backend file on click
+    this.command = {
+      title: 'Open Backend Route',
+      command: 'extension.openBackendRoute',
+      arguments: [openUri]
+    };
+    
     this.iconPath = {
       light: path.join(__filename, '..', '..', 'src/resources', 'dark-endpoint.svg'),
       dark: path.join(__filename, '..', '..', 'src/resources', 'light-endpoint.svg')

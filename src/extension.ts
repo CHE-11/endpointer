@@ -15,7 +15,6 @@ export function activate(context: vscode.ExtensionContext) {
   // Match a single comment line. Do not eat the newline at the end.
   const frontEndRegex = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
 
-
 	// Register the tree view in the Endpointer activity bar
 	const rootPath =
 		vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
@@ -88,43 +87,32 @@ export function activate(context: vscode.ExtensionContext) {
     treeDataProvider: frontendCallsProvider
   });
 
-  // Handle double-click on backend method items to open the file
-  let lastClickTime = 0;
-  let lastClickedItem: any = null;
-  const DOUBLE_CLICK_THRESHOLD = 300; // milliseconds
+  // Command to open backend route file
+  const openBackendRouteCommand = vscode.commands.registerCommand('extension.openBackendRoute', async (openUri: string) => {
+    try {
+      const { fileUri, line } = parseEndpointerUriString(String(openUri));
+      if (typeof line === 'number') {
+        await vscode.window.showTextDocument(fileUri, { 
+          selection: new vscode.Range(new vscode.Position(line, 0), new vscode.Position(line, 0)) 
+        });
+      } else {
+        await vscode.window.showTextDocument(fileUri);
+      }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Failed to open file: ${e?.message || e}`);
+    }
+  });
 
+  // Handle selection to show "no frontend calls" message when appropriate
   treeView.onDidChangeSelection(async (e) => {
     if (e.selection.length === 0) return;
     const item = e.selection[0];
     
-    // Only handle MethodItem double-clicks
+    // Show message if MethodItem has no frontend calls
     if (item && (item as any).contextValue === 'method') {
-      const now = Date.now();
-      const isDoubleClick = (now - lastClickTime < DOUBLE_CLICK_THRESHOLD) && (lastClickedItem === item);
-      
-      if (isDoubleClick) {
-        // Double-click: open the backend file
-        const methodItem = item as any;
-        if (methodItem.fileUri) {
-          try {
-            const { fileUri, line } = parseEndpointerUriString(String(methodItem.openUri));
-            if (typeof line === 'number') {
-              await vscode.window.showTextDocument(fileUri, { 
-                selection: new vscode.Range(new vscode.Position(line, 0), new vscode.Position(line, 0)) 
-              });
-            } else {
-              await vscode.window.showTextDocument(fileUri);
-            }
-          } catch (e: any) {
-            vscode.window.showErrorMessage(`Failed to open file: ${e?.message || e}`);
-          }
-        }
-        lastClickTime = 0;
-        lastClickedItem = null;
-      } else {
-        // Single-click: just track for potential double-click
-        lastClickTime = now;
-        lastClickedItem = item;
+      const methodItem = item as any;
+      if (methodItem.callCount === 0) {
+        vscode.window.showInformationMessage(`No frontend calls found for ${methodItem.method} ${methodItem.endpoint}`);
       }
     }
   });
@@ -318,7 +306,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // --------------------------------------------------------------------------------------------------------------------
 
-  context.subscriptions.push( pasteBackendDisposable, pasteFrontendDisposable, handleLinkClickCommand, copyToClipboardCommand, indexWorkspaceCommand, statusBar, formatEndpoints);
+  context.subscriptions.push( pasteBackendDisposable, pasteFrontendDisposable, handleLinkClickCommand, copyToClipboardCommand, indexWorkspaceCommand, statusBar, formatEndpoints, openBackendRouteCommand);
 
   // Provide real document links so Ctrl+Click jumps directly to the file
   const docLinkProvider = vscode.languages.registerDocumentLinkProvider({ scheme: 'file' }, {
@@ -392,10 +380,10 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
           backendMatches.push({ method: match[1], endpoint: match[2], file: document.fileName, uri: uri});
         }
 
-        const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*([^]*)/g;
+        const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
         let frontMatch;
         while ((frontMatch = frontend.exec(text)) !== null) {
-          // console.log(`Found frontend call: ${frontMatch[1]}, file: ${document.fileName}`);
+          // console.log(`Found frontend call: ${frontMatch[1]}, ${frontMatch[2]}, file: ${document.fileName}`);
           // Process or store these matches as needed
           const line_number = document.positionAt(frontMatch.index).line;
           const uri = getFileURI(line_number, document);
