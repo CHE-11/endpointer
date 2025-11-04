@@ -2,7 +2,9 @@ import { describe, it } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
+// **********************************************************************
 // Vitest Test to check for ENDPOINTER comments in the frontend code?
+// **********************************************************************
 
 const srcDir = path.resolve(__dirname, '..');     // Directory to scan for ENDPOINTER comments?
 const excludeDirectories = ['tests', 'types/AI']; // Directories to exclude from scanning?                    
