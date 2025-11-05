@@ -2,24 +2,69 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { RoutesProvider, FrontendCallsProvider } from './routesProvider';
- 
+import * as path from 'path';
+import * as fs from 'fs';
+
+interface EndpointerConfig {
+  frontend: {
+    folders_to_include: string[];
+    extensions_to_include: string[];
+  };
+  backend: {
+    folders_to_include: string[];
+    extensions_to_include: string[];
+  };
+}
+
+const DEFAULT_CONFIG: EndpointerConfig = {
+  frontend: {
+    folders_to_include: [],
+    extensions_to_include: []
+  },
+  backend: {
+    folders_to_include: [],
+    extensions_to_include: []
+  }
+};
+
+async function loadEndpointerConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<EndpointerConfig> {
+  const configPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'endpointer.json');
+  
+  try {
+    if (!fs.existsSync(configPath)) {
+      // Create .vscode directory if it doesn't exist
+      const vscodeDir = path.dirname(configPath);
+      if (!fs.existsSync(vscodeDir)) {
+        fs.mkdirSync(vscodeDir, { recursive: true });
+      }
+      
+      // Create default config file
+      fs.writeFileSync(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2));
+      console.log('Created default endpointer.json config at', configPath);
+      return DEFAULT_CONFIG;
+    }
+    
+    const fileContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(fileContent) as EndpointerConfig;
+    
+    // Validate config structure
+    if (!config.frontend) config.frontend = { extensions_to_include: [], folders_to_include: [] };
+    if (!config.backend) config.backend = { folders_to_include: [], extensions_to_include: [] };
+    
+    return config;
+  } catch (error) {
+    console.error('Error reading endpointer.json, using defaults:', error);
+    return DEFAULT_CONFIG;
+  }
+} 
 
 
 export function activate(context: vscode.ExtensionContext) {
   // get the config for the link color and icon
   const config = vscode.workspace.getConfiguration('endpointer');
   const linkColor = config.get('linkColor');
-  // const showLinkIcon = config.get('showLinkIcon');
-  const endpointRegexCall = config.get('endpointRegex') as string;
-  const endpointRegex = new RegExp(endpointRegexCall, 'g');
   // Match a single comment line. Do not eat the newline at the end.
   const frontEndRegex = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
-
-	// Register the tree view in the Endpointer activity bar
-	const rootPath =
-		vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0
-			? vscode.workspace.workspaceFolders[0].uri.fsPath
-			: undefined;
 
   // --------------------------------------------------------------------------------------------------------------------
   const statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -343,13 +388,10 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
   const backendMatches = [];
   const frontEndMatches = [];
 
-  // Get the excludeFromIndex from the config
+  // Get the excludeFromIndex from the config (fallback)
   const config = vscode.workspace.getConfiguration('endpointer');
   const excludeFromIndex: string = config.get<string>('excludeFromIndex', '');
   const includeInIndex: string = config.get<string>('includeInIndex', '');
-
-  // console.log('Excluded from index: ', excludeFromIndex);
-  // console.log('Included in index: ', includeInIndex);
   
   if (!workspaceFolders) {
     // console.log('No workspace folders found.');
@@ -357,44 +399,112 @@ async function performIndexing(workspaceFolders: any): Promise<any> {
   }
 
   for (const folder of workspaceFolders) {
-    const files = await vscode.workspace.findFiles(includeInIndex, excludeFromIndex);
+    // Load endpointer.json config
+    const endpointerConfig = await loadEndpointerConfig(folder);
+    
+    // Build patterns for frontend and backend
+    const frontendPatterns = buildSearchPatterns(
+      endpointerConfig.frontend.folders_to_include,
+      endpointerConfig.frontend.extensions_to_include
+    );
+    const backendPatterns = buildSearchPatterns(
+      endpointerConfig.backend.folders_to_include,
+      endpointerConfig.backend.extensions_to_include
+    );
 
-    // console.log('Files found: ', files.length)
+    // Search for backend files
+    const backendFiles = await findFilesWithPatterns(backendPatterns, excludeFromIndex, includeInIndex);
+    
+    for (const file of backendFiles) {
+      const document = await vscode.workspace.openTextDocument(file);
+      const text = document.getText();
+      const backend = /\/\/\s*ENDPOINTER\s*<backend>\s*method:\s*"([^"]*)",\s*endpoint:\s*"([^"]*)"/g;
+      let match;
 
-      for (const file of files) {
-
-        const document = await vscode.workspace.openTextDocument(file);
-        const text = document.getText();
-        const backend = /\/\/\s*ENDPOINTER\s*<backend>\s*method:\s*"([^"]*)",\s*endpoint:\s*"([^"]*)"/g;
-        let match;
-        // console log the file path
-        // console.log(`File path: ${document.fileName}`);
-
-        while ((match = backend.exec(text)) !== null) {
-          // Get the line number where the match was found
-          const line_number = document.positionAt(match.index).line;
-
-          const uri = getFileURI(line_number, document);
-          // console.log(`Found method: ${match[1]}, endpoint: ${match[2]}, file: ${document.fileName}`);
-          // Process or store these matches as needed
-          backendMatches.push({ method: match[1], endpoint: match[2], file: document.fileName, uri: uri});
-        }
-
-        const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
-        let frontMatch;
-        while ((frontMatch = frontend.exec(text)) !== null) {
-          // console.log(`Found frontend call: ${frontMatch[1]}, ${frontMatch[2]}, file: ${document.fileName}`);
-          // Process or store these matches as needed
-          const line_number = document.positionAt(frontMatch.index).line;
-          const uri = getFileURI(line_number, document);
-
-          frontEndMatches.push({ method: frontMatch[1], endpoint: frontMatch[2], file: document.fileName, uri: uri});
-        }
+      while ((match = backend.exec(text)) !== null) {
+        const line_number = document.positionAt(match.index).line;
+        const uri = getFileURI(line_number, document);
+        backendMatches.push({ method: match[1], endpoint: match[2], file: document.fileName, uri: uri});
       }
+    }
+
+    // Search for frontend files
+    const frontendFiles = await findFilesWithPatterns(frontendPatterns, excludeFromIndex, includeInIndex);
+    
+    for (const file of frontendFiles) {
+      const document = await vscode.workspace.openTextDocument(file);
+      const text = document.getText();
+      const frontend = /\/\/\s*ENDPOINTER\s*<frontend>\s*method:\s*"([^"]+)",\s*endpoint:\s*"([^"]+)"/g;
+      let frontMatch;
+
+      while ((frontMatch = frontend.exec(text)) !== null) {
+        const line_number = document.positionAt(frontMatch.index).line;
+        const uri = getFileURI(line_number, document);
+        frontEndMatches.push({ method: frontMatch[1], endpoint: frontMatch[2], file: document.fileName, uri: uri});
+      }
+    }
   }
 
   // Return the list of endpoints found
   return { backendMatches, frontEndMatches };
+}
+
+function buildSearchPatterns(folders: string[], extensions: string[]): string[] {
+  // If both are empty, return empty array to signal "search everything"
+  if (folders.length === 0 && extensions.length === 0) {
+    return [];
+  }
+
+  const patterns: string[] = [];
+
+  // Clean folder paths (remove leading slashes)
+  const cleanFolders = folders.map(f => f.startsWith('/') ? f.substring(1) : f);
+  
+  // Clean extensions (ensure they start with a dot)
+  const cleanExtensions = extensions.map(e => e.startsWith('.') ? e : '.' + e);
+
+  // If both folders and extensions are specified
+  if (cleanFolders.length > 0 && cleanExtensions.length > 0) {
+    for (const folder of cleanFolders) {
+      for (const ext of cleanExtensions) {
+        patterns.push(`${folder}/**/*${ext}`);
+      }
+    }
+  }
+  // If only folders are specified, search all files in those folders
+  else if (cleanFolders.length > 0) {
+    for (const folder of cleanFolders) {
+      patterns.push(`${folder}/**/*`);
+    }
+  }
+  // If only extensions are specified, search everywhere with those extensions
+  else if (cleanExtensions.length > 0) {
+    for (const ext of cleanExtensions) {
+      patterns.push(`**/*${ext}`);
+    }
+  }
+
+  return patterns;
+}
+
+async function findFilesWithPatterns(patterns: string[], excludePattern: string, fallbackIncludePattern: string): Promise<vscode.Uri[]> {
+  // If no patterns specified, use fallback or search everything
+  if (patterns.length === 0) {
+    const includePattern = fallbackIncludePattern || '**/*';
+    return await vscode.workspace.findFiles(includePattern, excludePattern);
+  }
+
+  // Search with each pattern and deduplicate results
+  const filesMap = new Map<string, vscode.Uri>();
+  
+  for (const pattern of patterns) {
+    const files = await vscode.workspace.findFiles(pattern, excludePattern);
+    for (const file of files) {
+      filesMap.set(file.fsPath, file);
+    }
+  }
+
+  return Array.from(filesMap.values());
 }
 
 

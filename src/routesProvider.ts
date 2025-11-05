@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 
 interface BackendMatch {
   method: string;
@@ -15,7 +16,98 @@ interface FrontendMatch {
   uri: string;
 }
 
+interface EndpointerConfig {
+  frontend: {
+    folders_to_include: string[];
+    extensions_to_include: string[];
+  };
+  backend: {
+    folders_to_include: string[];
+    extensions_to_include: string[];
+  };
+}
+
+const DEFAULT_CONFIG: EndpointerConfig = {
+  frontend: {
+    folders_to_include: [],
+    extensions_to_include: []
+  },
+  backend: {
+    folders_to_include: [],
+    extensions_to_include: []
+  }
+};
+
 type TreeNode = SegmentItem | MethodItem | FrontendCallItem;
+
+async function loadEndpointerConfig(workspaceFolder: vscode.WorkspaceFolder): Promise<EndpointerConfig> {
+  const configPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'endpointer.json');
+  
+  try {
+    if (!fs.existsSync(configPath)) {
+      return DEFAULT_CONFIG;
+    }
+    
+    const fileContent = fs.readFileSync(configPath, 'utf8');
+    const config = JSON.parse(fileContent) as EndpointerConfig;
+    
+    // Validate config structure
+    if (!config.frontend) config.frontend = { folders_to_include: [], extensions_to_include: [] };
+    if (!config.backend) config.backend = { folders_to_include: [], extensions_to_include: [] };
+    
+    return config;
+  } catch (error) {
+    console.error('Error reading endpointer.json, using defaults:', error);
+    return DEFAULT_CONFIG;
+  }
+}
+
+function matchesConfig(filePath: string, workspaceRoot: string, folders: string[], extensions: string[]): boolean {
+  // If both are empty, include everything
+  if (folders.length === 0 && extensions.length === 0) {
+    return true;
+  }
+
+  // Get relative path from workspace root
+  let relativePath: string;
+  if (filePath.startsWith(workspaceRoot)) {
+    relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+  } else {
+    relativePath = filePath.replace(/\\/g, '/');
+  }
+
+  // Clean folder paths (remove leading slashes)
+  const cleanFolders = folders.map(f => f.startsWith('/') ? f.substring(1) : f);
+  
+  // Clean extensions (ensure they start with a dot)
+  const cleanExtensions = extensions.map(e => e.startsWith('.') ? e : '.' + e);
+  
+  const fileExt = path.extname(filePath);
+
+  // Check folder match
+  let folderMatch = cleanFolders.length === 0;
+  if (!folderMatch) {
+    folderMatch = cleanFolders.some(folder => {
+      const normalizedFolder = folder.replace(/\\/g, '/');
+      return relativePath.startsWith(normalizedFolder + '/') || relativePath === normalizedFolder;
+    });
+  }
+
+  // Check extension match
+  let extMatch = cleanExtensions.length === 0;
+  if (!extMatch) {
+    extMatch = cleanExtensions.includes(fileExt);
+  }
+
+  // Both must match if both are specified, otherwise just the specified one needs to match
+  if (cleanFolders.length > 0 && cleanExtensions.length > 0) {
+    return folderMatch && extMatch;
+  } else if (cleanFolders.length > 0) {
+    return folderMatch;
+  } else {
+    return extMatch;
+  }
+}
 
 export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
   private _onDidChangeTreeData: vscode.EventEmitter<TreeNode | undefined | void> = new vscode.EventEmitter<TreeNode | undefined | void>();
@@ -41,7 +133,10 @@ export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
 
     if (!element) {
       if (this.roots.length === 0) {
-        this.buildTree();
+        return this.buildTree().then(() => {
+          const sortedRoots = this.roots.sort((a, b) => (a.label as string).localeCompare(b.label as string));
+          return sortedRoots;
+        });
       }
       const sortedRoots = this.roots.sort((a, b) => (a.label as string).localeCompare(b.label as string));
       return Promise.resolve(sortedRoots);
@@ -58,17 +153,38 @@ export class RoutesProvider implements vscode.TreeDataProvider<TreeNode> {
     return Promise.resolve([]);
   }
 
-  private buildTree(): void {
+  private async buildTree(): Promise<void> {
     const matches: BackendMatch[] = this.context.globalState.get('backendMatches', []);
     const frontendMatches: FrontendMatch[] = this.context.globalState.get('frontEndMatches', []);
+    
+    // Load config and filter matches
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+      this.roots = [];
+      return;
+    }
+
+    const config = await loadEndpointerConfig(workspaceFolder);
+    const workspaceRoot = workspaceFolder.uri.fsPath;
+
+    // Filter backend matches
+    const filteredBackendMatches = matches.filter(match => 
+      matchesConfig(match.file, workspaceRoot, config.backend.folders_to_include, config.backend.extensions_to_include)
+    );
+
+    // Filter frontend matches
+    const filteredFrontendMatches = frontendMatches.filter(match => 
+      matchesConfig(match.file, workspaceRoot, config.frontend.folders_to_include, config.frontend.extensions_to_include)
+    );
+
     const segmentRootByName = new Map<string, SegmentItem>();
 
-    for (const match of matches) {
+    for (const match of filteredBackendMatches) {
       const endpoint = sanitizeEndpoint(match.endpoint);
       const segments = endpoint.split('/').filter(Boolean);
 
-      // Find all frontend calls that match this backend endpoint
-      const matchingFrontendCalls = frontendMatches.filter(
+      // Find all frontend calls that match this backend endpoint (and are also filtered)
+      const matchingFrontendCalls = filteredFrontendMatches.filter(
         fm => fm.method === match.method && fm.endpoint === match.endpoint
       );
 
@@ -126,7 +242,20 @@ export class FrontendCallsProvider implements vscode.TreeDataProvider<FrontendCa
 
     if (!element) {
       const frontendMatches: FrontendMatch[] = this.context.globalState.get('frontEndMatches', []);
-      return Promise.resolve(frontendMatches.map(fm => new FrontendCallItem(fm.file, fm.uri, fm.method, fm.endpoint)));
+      
+      // Load config and filter matches
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      if (!workspaceFolder) {
+        return Promise.resolve([]);
+      }
+
+      return loadEndpointerConfig(workspaceFolder).then(config => {
+        const workspaceRoot = workspaceFolder.uri.fsPath;
+        const filteredMatches = frontendMatches.filter(match => 
+          matchesConfig(match.file, workspaceRoot, config.frontend.folders_to_include, config.frontend.extensions_to_include)
+        );
+        return filteredMatches.map(fm => new FrontendCallItem(fm.file, fm.uri, fm.method, fm.endpoint));
+      });
     }
 
     return Promise.resolve([]);
