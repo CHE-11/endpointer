@@ -381,6 +381,11 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
   context.subscriptions.push(docLinkProvider);
+
+  // Automatically start indexing on activation if a workspace is open
+  if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+    vscode.commands.executeCommand('extension.reindexWorkspace');
+  }
 }
 
 async function performIndexing(workspaceFolders: any): Promise<any> {

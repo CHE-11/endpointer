@@ -2,7 +2,7 @@
   "name": "endpointer",
   "displayName": "Endpointer",
   "description": "",
-  "version": "1.0.30",
+  "version": "1.0.31",
   "license": "MIT",
   "icon": "icon.png",
   "repository": {
@@ -15,7 +15,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "configuration": {
